@@ -488,6 +488,33 @@
             color: #ff6b6b;
             border-color: rgba(255, 77, 77, 0.4);
         }
+        .icon-action-btn {
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.25);
+            color: rgba(255, 255, 255, 0.85);
+            width: 42px; height: 42px;
+            border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            cursor: pointer;
+            font-size: 1rem;
+            transition: all 0.2s;
+            flex-shrink: 0;
+        }
+        .icon-action-btn:hover {
+            background: rgba(255, 255, 255, 0.25);
+            color: #ffffff;
+            transform: translateY(-2px);
+        }
+        .icon-action-btn.danger-hover:hover {
+            background: rgba(255, 77, 77, 0.2);
+            color: #ff6b6b;
+            border-color: rgba(255, 77, 77, 0.4);
+        }
+        .icon-action-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
         .close-subpage-btn {
             background: rgba(255, 255, 255, 0.15);
             border: 1px solid rgba(255, 255, 255, 0.3);
@@ -1013,8 +1040,8 @@
         <div class="subpage-header">
             <div class="subpage-title"><i class="fas fa-images"></i> For my pictures,Memories ＆ Favorites</div>
             <div class="subpage-actions">
-                <button class="clear-cache-btn" id="syncGalleryFromGithubBtn" title="直接读取仓库 images 文件夹"><i class="fab fa-github"></i> 从 GitHub 读取</button>
-                <button class="clear-cache-btn" id="clearGalleryCacheBtn" title="清除旧缓存"><i class="fas fa-sync-alt"></i> 清空失效缓存</button>
+                <button class="icon-action-btn" id="syncGalleryFromGithubBtn" title="从 GitHub 读取"><i class="fab fa-github"></i></button>
+                <button class="icon-action-btn danger-hover" id="clearGalleryCacheBtn" title="清空失效缓存"><i class="fas fa-sync-alt"></i></button>
                 <label class="upload-btn-label">
                     <i class="fas fa-upload"></i> 上传图片
                     <input type="file" id="imageUploadInput" accept="image/*" multiple style="display: none;" />
@@ -1032,10 +1059,10 @@
     <!-- 音乐二级页面 -->
     <div class="subpage-container" id="musicSubpage">
         <div class="subpage-header">
-            <div class="subpage-title"><i class="fas fa-compact-disc"></i> My Music Collection ＆ Audio Universe</div>
+            <div class="subpage-title"><i class="fas fa-compact-disc"></i> I Listen,I Like，My Music Universe</div>
             <div class="subpage-actions">
-                <button class="clear-cache-btn" id="syncMusicFromGithubBtn" title="直接读取仓库 music 文件夹"><i class="fab fa-github"></i> 从 GitHub 读取</button>
-                <button class="clear-cache-btn" id="clearMusicCacheBtn" title="仅清除失效歌曲"><i class="fas fa-sync-alt"></i> 清理失效缓存</button>
+                <button class="icon-action-btn" id="syncMusicFromGithubBtn" title="从 GitHub 读取"><i class="fab fa-github"></i></button>
+                <button class="icon-action-btn danger-hover" id="clearMusicCacheBtn" title="清理失效缓存"><i class="fas fa-sync-alt"></i></button>
                 <label class="upload-btn-label">
                     <i class="fas fa-cloud-upload-alt"></i> 上传音乐
                     <input type="file" id="musicUploadInput" accept="audio/*" multiple style="display: none;" />
@@ -1457,7 +1484,7 @@
 
                     const originalHtml = syncGalleryFromGithubBtn.innerHTML;
                     syncGalleryFromGithubBtn.disabled = true;
-                    syncGalleryFromGithubBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 读取中...';
+                    syncGalleryFromGithubBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
 
                     try {
                         const response = await fetch(`https://api.github.com/repos/${owner}/${repo}/contents/images`, {
@@ -1510,7 +1537,7 @@
 
                     const originalHtml = clearGalleryCacheBtn.innerHTML;
                     clearGalleryCacheBtn.disabled = true;
-                    clearGalleryCacheBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 检测中...';
+                    clearGalleryCacheBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
 
                     const checks = await Promise.all(uploadedImages.map((imgObj) => {
                         const url = typeof imgObj === 'string' ? imgObj : (imgObj ? imgObj.url : '');
@@ -1990,7 +2017,7 @@
 
                     const originalHtml = syncMusicFromGithubBtn.innerHTML;
                     syncMusicFromGithubBtn.disabled = true;
-                    syncMusicFromGithubBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 读取中...';
+                    syncMusicFromGithubBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
 
                     try {
                         const response = await fetch(`https://api.github.com/repos/${owner}/${repo}/contents/music`, {
@@ -2068,7 +2095,7 @@
 
                     const originalHtml = clearMusicCacheBtn.innerHTML;
                     clearMusicCacheBtn.disabled = true;
-                    clearMusicCacheBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 检测中...';
+                    clearMusicCacheBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
 
                     const currentTrack = currentTrackIndex >= 0 ? uploadedMusic[currentTrackIndex] : null;
 
