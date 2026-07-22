@@ -1067,6 +1067,7 @@
                     <i class="fas fa-cloud-upload-alt"></i> 上传音乐
                     <input type="file" id="musicUploadInput" accept="audio/*" multiple style="display: none;" />
                 </label>
+                <input type="file" id="trackCoverUploadInput" accept="image/*" style="display: none;" />
                 <button class="close-subpage-btn" id="closeMusicBtn" title="返回主页"><i class="fas fa-times"></i></button>
             </div>
         </div>
@@ -1728,38 +1729,122 @@
             const musicListWrap = document.getElementById('musicListWrap');
             const musicUploadInput = document.getElementById('musicUploadInput');
             const clearMusicCacheBtn = document.getElementById('clearMusicCacheBtn');
+            const trackCoverUploadInput = document.getElementById('trackCoverUploadInput');
 
             const defaultCoverUrl = 'https://i.postimg.cc/fTX2LdCw/wallhaven-3k5zgy-3840x2400.png';
 
-            // 从音频文件中读取内嵌封面（ID3 APIC / MP4 covr 等），失败或不存在则返回 null
-            function extractEmbeddedCover(file) {
+            // 从音频文件中读取 ID3/MP4 标签信息：标题、艺术家、内嵌封面。读取失败或字段不存在则对应返回 null
+            function extractAudioMetadata(source) {
                 return new Promise((resolve) => {
-                    if (typeof jsmediatags === 'undefined') { resolve(null); return; }
+                    if (typeof jsmediatags === 'undefined') { resolve({ title: null, artist: null, cover: null }); return; }
                     try {
-                        jsmediatags.read(file, {
+                        jsmediatags.read(source, {
                             onSuccess: (tag) => {
+                                const result = { title: null, artist: null, cover: null };
                                 try {
-                                    const picture = tag && tag.tags && tag.tags.picture;
-                                    if (!picture || !picture.data || !picture.format) { resolve(null); return; }
-                                    const byteArray = new Uint8Array(picture.data);
-                                    // 封面过大（>2MB）不写入 localStorage，避免撑爆本地存储配额
-                                    if (byteArray.length > 2 * 1024 * 1024) { resolve(null); return; }
-                                    let binary = '';
-                                    const chunkSize = 0x8000;
-                                    for (let i = 0; i < byteArray.length; i += chunkSize) {
-                                        binary += String.fromCharCode.apply(null, byteArray.subarray(i, i + chunkSize));
+                                    const tags = tag && tag.tags;
+                                    if (tags) {
+                                        if (tags.title && String(tags.title).trim()) result.title = String(tags.title).trim();
+                                        if (tags.artist && String(tags.artist).trim()) result.artist = String(tags.artist).trim();
+                                        const picture = tags.picture;
+                                        if (picture && picture.data && picture.format) {
+                                            const byteArray = new Uint8Array(picture.data);
+                                            // 封面过大（>2MB）不写入 localStorage，避免撑爆本地存储配额
+                                            if (byteArray.length <= 2 * 1024 * 1024) {
+                                                let binary = '';
+                                                const chunkSize = 0x8000;
+                                                for (let i = 0; i < byteArray.length; i += chunkSize) {
+                                                    binary += String.fromCharCode.apply(null, byteArray.subarray(i, i + chunkSize));
+                                                }
+                                                result.cover = `data:${picture.format};base64,${btoa(binary)}`;
+                                            }
+                                        }
                                     }
-                                    const dataUrl = `data:${picture.format};base64,${btoa(binary)}`;
-                                    resolve(dataUrl);
                                 } catch (e) {
-                                    console.warn('封面解析失败:', e);
-                                    resolve(null);
+                                    console.warn('音频标签解析失败:', e);
                                 }
+                                resolve(result);
                             },
-                            onError: () => resolve(null)
+                            onError: () => resolve({ title: null, artist: null, cover: null })
                         });
                     } catch (e) {
-                        resolve(null);
+                        resolve({ title: null, artist: null, cover: null });
+                    }
+                });
+            }
+
+            // 统一获取用于展示的歌曲标题：优先 ID3 标题，其次为文件名派生出的名字
+            function getTrackDisplayName(track) {
+                if (!track) return '未命名音频';
+                return (track.title && track.title.trim()) || track.name || '未命名音频';
+            }
+
+            // 根据音频在仓库中的路径，推导出对应封面文件应使用的基础文件名（不含扩展名）
+            function getAudioBaseName(audioPath) {
+                if (!audioPath) return '';
+                const fileName = audioPath.split('/').pop() || '';
+                return fileName.replace(/\.[^/.]+$/, '');
+            }
+
+            // 手动设置某首歌的封面：打开文件选择框
+            let coverUploadTargetIdx = -1;
+            function openTrackCoverPicker(idx) {
+                coverUploadTargetIdx = idx;
+                if (trackCoverUploadInput) {
+                    trackCoverUploadInput.value = '';
+                    trackCoverUploadInput.click();
+                }
+            }
+
+            if (trackCoverUploadInput) {
+                trackCoverUploadInput.addEventListener('change', async (e) => {
+                    const file = e.target.files && e.target.files[0];
+                    const targetIdx = coverUploadTargetIdx;
+                    trackCoverUploadInput.value = '';
+                    if (!file || targetIdx < 0 || !uploadedMusic[targetIdx]) return;
+
+                    const track = uploadedMusic[targetIdx];
+
+                    const creds = await getGitHubCredentialsAsync();
+                    if (!creds) return;
+                    const { token, owner, repo } = creds;
+
+                    try {
+                        const base64String = await new Promise((resolve, reject) => {
+                            const reader = new FileReader();
+                            reader.onload = () => resolve(reader.result.split(',')[1]);
+                            reader.onerror = reject;
+                            reader.readAsDataURL(file);
+                        });
+
+                        // 封面文件名与音频文件名（不含扩展名）保持一致，方便同步时自动匹配
+                        const coverExt = (file.name.split('.').pop() || 'jpg').toLowerCase();
+                        const audioBaseName = getAudioBaseName(track.path);
+                        const coverPath = `covers/${audioBaseName}.${coverExt}`;
+
+                        const response = await fetch(`https://api.github.com/repos/${owner}/${repo}/contents/${coverPath}`, {
+                            method: 'PUT',
+                            headers: {
+                                'Authorization': `Bearer ${token}`,
+                                'Content-Type': 'application/json',
+                                'Accept': 'application/vnd.github+json'
+                            },
+                            body: JSON.stringify({ message: `Set cover for ${track.name}`, content: base64String })
+                        });
+
+                        if (!response.ok) throw new Error('封面上传失败');
+
+                        const coverUrl = creds.getPublicUrl(coverPath);
+                        track.cover = coverUrl;
+                        localStorage.setItem('ivy_uploaded_music', JSON.stringify(uploadedMusic));
+
+                        if (targetIdx === currentTrackIndex && playerCoverImg) {
+                            playerCoverImg.src = coverUrl;
+                        }
+                        renderMusicList();
+                    } catch (error) {
+                        console.error(error);
+                        alert('封面上传失败，请检查凭据或图片大小。');
                     }
                 });
             }
@@ -1792,10 +1877,12 @@
 
                 currentTrackIndex = index;
                 const track = uploadedMusic[currentTrackIndex];
+                const displayName = getTrackDisplayName(track);
                 
                 audioPlayer.src = track.url;
-                playerTitle.textContent = track.name || "未命名曲目";
-                miniMusicTitle.textContent = track.name || "未命名曲目";
+                playerTitle.textContent = displayName;
+                playerArtist.textContent = track.artist || "Jaros' Audio Library";
+                miniMusicTitle.textContent = displayName;
                 miniMusicMeta.textContent = "正在播放 · Jaros Space";
 
                 if (playerCoverImg) {
@@ -1878,23 +1965,26 @@
                         ? `<img src="${track.cover}" alt="cover" style="width:100%; height:100%; object-fit:cover; border-radius:12px;" onerror="this.style.display='none';" />`
                         : `<i class="fas ${idx === currentTrackIndex && !audioPlayer.paused ? 'fa-volume-up' : 'fa-music'}"></i>`;
 
+                    const displayName = getTrackDisplayName(track);
+
                     item.innerHTML = `
                         <div class="music-item-info">
                             <div class="music-item-icon" style="overflow:hidden;">
                                 ${iconInnerHtml}
                             </div>
                             <div>
-                                <div class="music-item-name">${track.name || '未命名音频'}</div>
-                                <div class="music-item-sub">AUDIO FILE · JAROS SPACE</div>
+                                <div class="music-item-name">${displayName}</div>
+                                <div class="music-item-sub">${track.artist ? track.artist : 'AUDIO FILE · JAROS SPACE'}</div>
                             </div>
                         </div>
                         <div class="music-item-actions">
+                            <button class="music-item-btn set-cover" title="设置封面"><i class="fas fa-image"></i></button>
                             <button class="music-item-btn delete" title="删除曲目"><i class="fas fa-trash-alt"></i></button>
                         </div>
                     `;
 
                     item.addEventListener('click', (e) => {
-                        if (e.target.closest('.delete')) return;
+                        if (e.target.closest('.delete') || e.target.closest('.set-cover')) return;
                         if (currentTrackIndex === idx) {
                             togglePlay();
                         } else {
@@ -1902,10 +1992,16 @@
                         }
                     });
 
+                    const setCoverBtn = item.querySelector('.set-cover');
+                    setCoverBtn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        openTrackCoverPicker(idx);
+                    });
+
                     const delBtn = item.querySelector('.delete');
                     delBtn.addEventListener('click', async (e) => {
                         e.stopPropagation();
-                        if (!confirm(`确定要删除歌曲《${track.name}》吗？`)) return;
+                        if (!confirm(`确定要删除歌曲《${getTrackDisplayName(track)}》吗？`)) return;
 
                         const creds = await getGitHubCredentialsAsync();
                         if (!creds) return;
@@ -2069,22 +2165,59 @@
 
                         const audioItems = items.filter(item => item.type === 'file' && AUDIO_EXTENSIONS.includes((item.name.split('.').pop() || '').toLowerCase()));
 
-                        // 保留原本已经缓存过的封面（按 path 匹配），减少重复下载解析
-                        const oldCoverByPath = {};
-                        uploadedMusic.forEach(t => { if (t && t.path && t.cover) oldCoverByPath[t.path] = t.cover; });
+                        // 尝试读取 covers/ 文件夹，匹配用户手动为歌曲设置过的封面（按文件名对应，优先级最高）
+                        const manualCoverByBaseName = {};
+                        try {
+                            const coversResp = await fetchWithTimeout(`https://api.github.com/repos/${owner}/${repo}/contents/covers`, {
+                                headers: {
+                                    'Authorization': `Bearer ${token}`,
+                                    'Accept': 'application/vnd.github+json'
+                                }
+                            });
+                            if (coversResp.ok) {
+                                const coverItems = await coversResp.json();
+                                if (Array.isArray(coverItems)) {
+                                    coverItems.forEach(ci => {
+                                        if (ci.type === 'file') {
+                                            const base = getAudioBaseName(ci.name);
+                                            manualCoverByBaseName[base] = ci.download_url;
+                                        }
+                                    });
+                                }
+                            }
+                            // covers 文件夹不存在（404）是正常情况，忽略即可
+                        } catch (e) {
+                            console.warn('读取 covers 文件夹失败，跳过手动封面匹配:', e);
+                        }
+
+                        // 保留原本已经缓存过的标题/艺术家/封面（按 path 匹配），减少重复下载解析
+                        const oldMetaByPath = {};
+                        uploadedMusic.forEach(t => { if (t && t.path) oldMetaByPath[t.path] = t; });
 
                         const fresh = await Promise.all(audioItems.map(async (item) => {
-                            let cover = oldCoverByPath[item.path] || null;
-                            if (!cover) {
-                                // 单首歌最多等待 8 秒读取封面，超时则跳过，不阻塞整体同步
-                                cover = await withTimeout(extractEmbeddedCover(item.download_url), 8000, null);
+                            const manualCover = manualCoverByBaseName[getAudioBaseName(item.name)] || null;
+                            const oldMeta = oldMetaByPath[item.path] || null;
+
+                            let title = oldMeta && oldMeta.title ? oldMeta.title : null;
+                            let artist = oldMeta && oldMeta.artist ? oldMeta.artist : null;
+                            let cover = manualCover || (oldMeta && oldMeta.cover) || null;
+
+                            // 手动封面优先；如果既没有手动封面也没有缓存过的标签信息，才去读取音频本身的 ID3 标签
+                            if (!manualCover && (!oldMeta || (!oldMeta.cover && !oldMeta.title))) {
+                                const meta = await withTimeout(extractAudioMetadata(item.download_url), 8000, { title: null, artist: null, cover: null });
+                                title = title || meta.title;
+                                artist = artist || meta.artist;
+                                cover = cover || meta.cover;
                             }
+
                             return {
                                 name: deriveMusicNameFromFile(item.name),
+                                title: title || null,
+                                artist: artist || null,
                                 url: item.download_url,
                                 path: item.path,
                                 sha: item.sha,
-                                cover: cover
+                                cover: cover || null
                             };
                         }));
 
@@ -2202,15 +2335,17 @@
                             const responseData = await response.json();
                             const musicUrl = creds.getPublicUrl(filePath);
 
-                            // 尝试从音频文件本身读取内嵌封面图（如果有的话）
-                            const embeddedCover = await extractEmbeddedCover(file);
+                            // 尝试从音频文件本身读取 ID3/MP4 标签（标题、艺术家、内嵌封面）
+                            const meta = await withTimeout(extractAudioMetadata(file), 8000, { title: null, artist: null, cover: null });
 
                             uploadedMusic.push({
-                                name: file.name.replace(/\.[^/.]+$/, ""), // 自动去除拓展名作为歌名
+                                name: file.name.replace(/\.[^/.]+$/, ""), // 文件名派生的名字，作为标题的兜底
+                                title: meta.title || null,               // ID3 标题（如果存在）
+                                artist: meta.artist || null,             // ID3 艺术家（如果存在）
                                 url: musicUrl,
                                 path: filePath,
                                 sha: responseData.content.sha,
-                                cover: embeddedCover || null
+                                cover: meta.cover || null
                             });
 
                             localStorage.setItem('ivy_uploaded_music', JSON.stringify(uploadedMusic));
