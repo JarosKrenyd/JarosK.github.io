@@ -227,6 +227,7 @@
         .article-meta { font-size: 0.7rem; color: rgba(255, 255, 255, 0.6); display: flex; gap: 0.8rem; }
         .article-item:hover .article-title { color: #d4d4d4; }
 
+        /* 相册展位卡片：已纯化，不含任何文字遮罩 */
         .block-top-img { 
             padding: 0; 
             height: 180px; 
@@ -235,16 +236,20 @@
             overflow: hidden; 
             border-radius: 28px;
             display: flex;
-            align-items: flex-end;
+            align-items: center;
+            justify-content: center;
+            background: rgba(255, 255, 255, 0.12);
         }
-        .gallery-img { width: 100%; height: 100%; object-fit: cover; transition: transform 0.6s ease; position: absolute; top:0; left:0; z-index:1; }
-        .block-top-img:hover .gallery-img { transform: scale(1.04); }
-        .gallery-mask {
-            position: relative; width: 100%;
-            background: linear-gradient(to top, rgba(15, 10, 25, 0.9), transparent);
-            padding: 1.2rem 1.2rem; z-index: 2;
+        .gallery-img { 
+            width: 100%; 
+            height: 100%; 
+            object-fit: cover; 
+            transition: transform 0.6s ease; 
+            position: absolute; 
+            top:0; left:0; 
+            z-index: 1; 
         }
-        .gallery-mask .card-label { color: rgba(255, 255, 255, 0.9) !important; }
+        .block-top-img:hover .gallery-img { transform: scale(1.05); }
 
         .calendar-box { width: 100%; display: flex; flex-direction: column; }
         .calendar-header { display: flex; justify-content: space-between; font-size: 0.8rem; font-weight: 600; color: #ffffff; margin-bottom: 1rem; }
@@ -639,12 +644,12 @@
 
                     <!-- 【第二列】 -->
                     <div class="masonry-column">
-                        <!-- 时间看板 -->
+                        <!-- 实时时间与真实天气看板 -->
                         <div class="bento-card block-rich-time">
-                            <div class="rich-date-row" id="richDateDisplay">2026年07月20日 星期一</div>
+                            <div class="rich-date-row" id="richDateDisplay">----年--月--日 星期-</div>
                             <div class="rich-clock-row" id="miniClockDisplay">--:--</div>
-                            <div class="rich-weather-row">
-                                <i class="fas fa-sun"></i> 28°C HONG KONG
+                            <div class="rich-weather-row" id="weatherDisplay">
+                                <i class="fas fa-spinner fa-spin"></i> 正在加载天气...
                             </div>
                         </div>
 
@@ -672,26 +677,29 @@
 
                     <!-- 【第三列】 -->
                     <div class="masonry-column">
-                        <!-- 相册模块：无图片时不显示缩略图 -->
+                        <!-- 纯粹相册展位：无任何文字掩盖 -->
                         <div class="bento-card block-top-img" id="galleryModuleTrigger" title="进入相册">
-                            <img src="" class="gallery-img" id="mainGalleryThumbnail" alt="Visual Concept View" style="display: none;">
-                            <div class="gallery-mask">
-                                <div class="card-label" style="margin:0;"><i class="far fa-image"></i> GALLERY SHOWCASE (CLICK TO EXPAND)</div>
-                            </div>
+                            <img src="" class="gallery-img" id="mainGalleryThumbnail" alt="Gallery Preview" style="display: none;">
                         </div>
 
+                        <!-- 完全动态的实时日历 -->
                         <div class="bento-card">
                             <div class="calendar-box">
                                 <div class="calendar-header">
-                                    <span id="calYearMonth">2026/07</span>
-                                    <span style="color: rgba(255,255,255,0.7);" id="calDayName">周一</span>
+                                    <span id="calYearMonth">----/--</span>
+                                    <span style="color: rgba(255,255,255,0.7);" id="calDayName">星期-</span>
                                 </div>
                                 <div class="calendar-grid">
-                                    <div class="calendar-day-label">一</div><div class="calendar-day-label">二</div><div class="calendar-day-label">三</div><div class="calendar-day-label">四</div><div class="calendar-day-label">五</div><div class="calendar-day-label">六</div><div class="calendar-day-label">日</div>
-                                    <div class="calendar-cell">29</div><div class="calendar-cell">30</div><div class="calendar-cell">1</div><div class="calendar-cell">2</div><div class="calendar-cell">3</div><div class="calendar-cell">4</div><div class="calendar-cell">5</div>
-                                    <div class="calendar-cell">6</div><div class="calendar-cell">7</div><div class="calendar-cell">8</div><div class="calendar-cell">9</div><div class="calendar-cell">10</div><div class="calendar-cell">11</div><div class="calendar-cell">12</div>
-                                    <div class="calendar-cell">13</div><div class="calendar-cell">14</div><div class="calendar-cell">15</div><div class="calendar-cell">16</div><div class="calendar-cell">17</div><div class="calendar-cell">18</div><div class="calendar-cell">19</div>
-                                    <div class="calendar-cell active">20</div><div class="calendar-cell">21</div><div class="calendar-cell">22</div><div class="calendar-cell">23</div><div class="calendar-cell">24</div><div class="calendar-cell">25</div><div class="calendar-cell">26</div>
+                                    <div class="calendar-day-label">一</div>
+                                    <div class="calendar-day-label">二</div>
+                                    <div class="calendar-day-label">三</div>
+                                    <div class="calendar-day-label">四</div>
+                                    <div class="calendar-day-label">五</div>
+                                    <div class="calendar-day-label">六</div>
+                                    <div class="calendar-day-label">日</div>
+                                </div>
+                                <div class="calendar-grid" id="calendarCellsContainer" style="margin-top: 0.4rem;">
+                                    <!-- 真实日历数字由 JS 动态精准计算生成 -->
                                 </div>
                             </div>
                         </div>
@@ -735,12 +743,11 @@
 
     <script>
         (function() {
-            // ==================== GitHub API 安全配置 ====================
+            // ==================== GitHub API 配置 ====================
             const GITHUB_CONFIG = {
-                owner: "JarosKrenyd",       // GitHub 用户名
-                repo: "JarosK.github.io",   // 仓库名称
+                owner: "JarosKrenyd",       
+                repo: "JarosK.github.io",   
                 
-                // 动态获取 Token，保存在浏览器本地缓存中，规避 GitHub 安全拦截
                 getToken: function() {
                     let token = localStorage.getItem('ivy_github_token');
                     if (!token) {
@@ -825,7 +832,8 @@
                 if (isNavOpen && !navCapsule.contains(e.target)) { toggleNav(); }
             });
 
-            function updateClock() {
+            // ==================== 1. 动态实时时间与日历渲染 ====================
+            function updateClockAndCalendar() {
                 const now = new Date();
                 const h = String(now.getHours()).padStart(2, '0');
                 const m = String(now.getMinutes()).padStart(2, '0');
@@ -847,15 +855,101 @@
                 document.getElementById('calYearMonth').textContent = `${y}/${mo}`;
                 document.getElementById('calDayName').textContent = weekdayStr;
             }
-            updateClock();
-            setInterval(updateClock, 1000);
 
-            // 读取存储的图片列表
+            // 动态生成精准日历网格
+            function renderDynamicCalendar() {
+                const now = new Date();
+                const y = now.getFullYear();
+                const m = now.getMonth(); 
+                const today = now.getDate();
+
+                const container = document.getElementById('calendarCellsContainer');
+                if (!container) return;
+                container.innerHTML = '';
+
+                // 当月1号是星期几 (转换成周一为0, 周日为6)
+                const firstDay = new Date(y, m, 1);
+                let startDay = (firstDay.getDay() + 6) % 7;
+
+                // 上个月天数和当月天数
+                const prevMonthDays = new Date(y, m, 0).getDate();
+                const daysInMonth = new Date(y, m + 1, 0).getDate();
+
+                // 填充上月末尾补位
+                for (let i = startDay - 1; i >= 0; i--) {
+                    const cell = document.createElement('div');
+                    cell.className = 'calendar-cell';
+                    cell.style.opacity = '0.3';
+                    cell.textContent = prevMonthDays - i;
+                    container.appendChild(cell);
+                }
+
+                // 填充当前月
+                for (let day = 1; day <= daysInMonth; day++) {
+                    const cell = document.createElement('div');
+                    cell.className = 'calendar-cell';
+                    if (day === today) {
+                        cell.classList.add('active');
+                    }
+                    cell.textContent = day;
+                    container.appendChild(cell);
+                }
+
+                // 填充下月开头补位（补齐整行）
+                const totalCells = startDay + daysInMonth;
+                const nextPadding = (7 - (totalCells % 7)) % 7;
+                for (let i = 1; i <= nextPadding; i++) {
+                    const cell = document.createElement('div');
+                    cell.className = 'calendar-cell';
+                    cell.style.opacity = '0.3';
+                    cell.textContent = i;
+                    container.appendChild(cell);
+                }
+            }
+
+            updateClockAndCalendar();
+            renderDynamicCalendar();
+            setInterval(updateClockAndCalendar, 1000);
+
+            // ==================== 2. 真实IP与实时天气获取 ====================
+            async function fetchRealWeather() {
+                const weatherEl = document.getElementById('weatherDisplay');
+                try {
+                    // IP 定位获取经纬度与城市名
+                    const geoRes = await fetch('https://ipapi.co/json/');
+                    if (!geoRes.ok) throw new Error('IP positioning failed');
+                    const geoData = await geoRes.json();
+                    const { latitude, longitude, city } = geoData;
+
+                    // Open-Meteo 免费获取实时天气
+                    const weatherRes = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current_weather=true`);
+                    if (!weatherRes.ok) throw new Error('Weather API failed');
+                    const weatherData = await weatherRes.json();
+                    
+                    const temp = Math.round(weatherData.current_weather.temperature);
+                    const code = weatherData.current_weather.weathercode;
+
+                    // 天气代码转 FontAwesome 图标
+                    let iconClass = 'fa-sun';
+                    if (code >= 1 && code <= 3) iconClass = 'fa-cloud-sun';
+                    else if (code >= 45 && code <= 48) iconClass = 'fa-smog';
+                    else if (code >= 51 && code <= 67) iconClass = 'fa-cloud-rain';
+                    else if (code >= 71 && code <= 77) iconClass = 'fa-snowflake';
+                    else if (code >= 80 && code <= 82) iconClass = 'fa-cloud-showers-heavy';
+                    else if (code >= 95) iconClass = 'fa-bolt';
+
+                    weatherEl.innerHTML = `<i class="fas ${iconClass}"></i> ${temp}°C ${city ? city.toUpperCase() : 'LOCAL'}`;
+                } catch (e) {
+                    console.warn("Weather fetch failed, fallback used:", e);
+                    weatherEl.innerHTML = `<i class="fas fa-sun"></i> 26°C LOCATION`;
+                }
+            }
+            fetchRealWeather();
+
+            // ==================== 相册与存储 ====================
             let uploadedImages = JSON.parse(localStorage.getItem('ivy_uploaded_gallery')) || [];
-
             const mainThumb = document.getElementById('mainGalleryThumbnail');
             
-            // 设置相册封面：有图片时随机选一张显示，没有图片则完全隐藏图片节点
             function setRandomMainThumbnail() {
                 if (uploadedImages && uploadedImages.length > 0) {
                     const randomIndex = Math.floor(Math.random() * uploadedImages.length);
@@ -880,7 +974,6 @@
             const lightboxImg = document.getElementById('lightboxImg');
             const lightboxClose = document.getElementById('lightboxClose');
 
-            // 渲染相册与删除按钮
             window.renderWaterfall = function() {
                 wfCol1.innerHTML = '';
                 wfCol2.innerHTML = '';
@@ -899,7 +992,6 @@
                     img.src = imgObj.url;
                     img.alt = `Gallery Image ${index}`;
                     
-                    // 删除按钮
                     const deleteBtn = document.createElement('button');
                     deleteBtn.className = 'delete-img-btn';
                     deleteBtn.innerHTML = '<i class="fas fa-trash-alt"></i>';
@@ -929,7 +1021,6 @@
                                 });
 
                                 if (!delRes.ok) {
-                                    // 权限不符或已被删除时清空本地 Token
                                     if (delRes.status === 401) localStorage.removeItem('ivy_github_token');
                                     throw new Error('GitHub 删除文件失败');
                                 }
@@ -984,7 +1075,6 @@
                 }
             });
 
-            // GitHub API 自动上传逻辑
             if (imageUploadInput) {
                 imageUploadInput.addEventListener('change', async (e) => {
                     const files = e.target.files;
@@ -1050,6 +1140,7 @@
                 });
             }
 
+            // ==================== Canvas 背景星空 ====================
             const canvas = document.getElementById('starfieldCanvas');
             const ctx = canvas.getContext('2d');
             let W, H, centerX, centerY;
@@ -1116,6 +1207,7 @@
             }
             drawStars();
 
+            // ==================== 心跳波形 Canvas ====================
             const hbCanvas = document.getElementById('heartbeatCanvas');
             const hbCtx = hbCanvas.getContext('2d');
             let hbW, hbH;
