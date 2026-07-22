@@ -455,6 +455,7 @@
             border: 12px solid rgba(255, 255, 255, 0.22);
             box-shadow: 0 12px 35px rgba(0, 0, 0, 0.35);
             cursor: pointer;
+            position: relative;
             transition: transform 0.3s ease, box-shadow 0.3s ease;
         }
         .waterfall-item:hover {
@@ -472,6 +473,31 @@
         }
         .waterfall-item:hover img {
             transform: scale(1.03);
+        }
+        
+        .delete-img-btn {
+            position: absolute;
+            top: 14px;
+            right: 14px;
+            background: rgba(0, 0, 0, 0.6);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            color: #ff6b6b;
+            width: 36px; height: 36px;
+            border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            cursor: pointer;
+            opacity: 0;
+            transition: opacity 0.2s, background 0.2s, transform 0.2s;
+            z-index: 10;
+            font-size: 0.9rem;
+        }
+        .waterfall-item:hover .delete-img-btn {
+            opacity: 1;
+        }
+        .delete-img-btn:hover {
+            background: rgba(255, 0, 0, 0.5);
+            color: #ffffff;
+            transform: scale(1.1);
         }
 
         .lightbox-modal {
@@ -700,11 +726,11 @@
 
     <script>
         (function() {
-            // ==================== GitHub API 自动上传配置 = = = = =
+            // ==================== GitHub API 配置 = = = = =
             const GITHUB_CONFIG = {
                 owner: "JarosKrenyd",       // 你的 GitHub 用户名
                 repo: "JarosK.github.io",   // 你的仓库名称
-                token: "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" // 请把新 Token 填在引号内
+                token: "ghp_请在此处粘贴你的新Token" // 请把新 Token 填在引号内
             };
 
             const blurOverlay = document.getElementById('blurOverlay');
@@ -718,6 +744,7 @@
                 
                 const currentBlur = ratio * 15;
                 const currentDim = ratio * 0.45;
+                blurOverlay.style.backdropFilter = `blur(${currentBlur}px)`;
                 blurOverlay.style.backdropFilter = `blur(${currentBlur}px)`;
                 blurOverlay.style.webkitBackdropFilter = `blur(${currentBlur}px)`;
                 blurOverlay.style.background = `rgba(15, 12, 25, ${currentDim})`;
@@ -800,23 +827,16 @@
             updateClock();
             setInterval(updateClock, 1000);
 
-            const defaultGalleryImages = [
-                "https://images.unsplash.com/photo-1543466835-00a7907e9de1?q=80&w=800&auto=format&fit=crop",
-                "https://images.unsplash.com/photo-1514888286974-6c03e2ca1dba?q=80&w=800&auto=format&fit=crop",
-                "https://images.unsplash.com/photo-1534361960057-19889db9621e?q=80&w=800&auto=format&fit=crop",
-                "https://images.unsplash.com/photo-1573865526739-10659fec78a5?q=80&w=800&auto=format&fit=crop",
-                "https://images.unsplash.com/photo-1561948955-570b270e7c36?q=80&w=800&auto=format&fit=crop",
-                "https://images.unsplash.com/photo-1548802673-380ab8ebc7b7?q=80&w=800&auto=format&fit=crop"
-            ];
-
+            // 已清除所有预置图片
             let uploadedImages = JSON.parse(localStorage.getItem('ivy_uploaded_gallery')) || [];
-            let allGalleryImages = [...defaultGalleryImages, ...uploadedImages];
 
             const mainThumb = document.getElementById('mainGalleryThumbnail');
             function setRandomMainThumbnail() {
-                if (allGalleryImages.length > 0) {
-                    const randomIndex = Math.floor(Math.random() * allGalleryImages.length);
-                    mainThumb.src = allGalleryImages[randomIndex];
+                if (uploadedImages.length > 0) {
+                    const randomIndex = Math.floor(Math.random() * uploadedImages.length);
+                    mainThumb.src = uploadedImages[randomIndex].url;
+                } else {
+                    mainThumb.src = "https://images.unsplash.com/photo-1514888286974-6c03e2ca1dba?q=80&w=800&auto=format&fit=crop";
                 }
             }
             setRandomMainThumbnail();
@@ -833,22 +853,71 @@
             const lightboxImg = document.getElementById('lightboxImg');
             const lightboxClose = document.getElementById('lightboxClose');
 
+            // 渲染相册与删除按钮
             window.renderWaterfall = function() {
                 wfCol1.innerHTML = '';
                 wfCol2.innerHTML = '';
                 wfCol3.innerHTML = '';
 
-                allGalleryImages.forEach((imgSrc, index) => {
+                if (uploadedImages.length === 0) {
+                    wfCol1.innerHTML = '<div style="color:rgba(255,255,255,0.5); padding:1rem; font-size:0.9rem;">暂无上传图片，请点击右上角上传。</div>';
+                    return;
+                }
+
+                uploadedImages.forEach((imgObj, index) => {
                     const item = document.createElement('div');
                     item.className = 'waterfall-item';
                     
                     const img = document.createElement('img');
-                    img.src = imgSrc;
+                    img.src = imgObj.url;
                     img.alt = `Gallery Image ${index}`;
                     
+                    // 删除按钮
+                    const deleteBtn = document.createElement('button');
+                    deleteBtn.className = 'delete-img-btn';
+                    deleteBtn.innerHTML = '<i class="fas fa-trash-alt"></i>';
+                    deleteBtn.title = '删除此图片';
+                    
+                    deleteBtn.addEventListener('click', async (e) => {
+                        e.stopPropagation();
+                        if (!confirm('确定要从相册及 GitHub 仓库中永久删除这张图片吗？')) return;
+
+                        try {
+                            if (imgObj.sha && imgObj.path) {
+                                const deleteApiUrl = `https://api.github.com/repos/${GITHUB_CONFIG.owner}/${GITHUB_CONFIG.repo}/contents/${imgObj.path}`;
+                                const delRes = await fetch(deleteApiUrl, {
+                                    method: 'DELETE',
+                                    headers: {
+                                        'Authorization': `Bearer ${GITHUB_CONFIG.token}`,
+                                        'Content-Type': 'application/json',
+                                        'Accept': 'application/vnd.github+json'
+                                    },
+                                    body: JSON.stringify({
+                                        message: `Delete image ${imgObj.path} via web interface`,
+                                        sha: imgObj.sha
+                                    })
+                                });
+
+                                if (!delRes.ok) {
+                                    throw new Error('GitHub 删除文件失败');
+                                }
+                            }
+
+                            uploadedImages.splice(index, 1);
+                            localStorage.setItem('ivy_uploaded_gallery', JSON.stringify(uploadedImages));
+                            renderWaterfall();
+                            setRandomMainThumbnail();
+                        } catch (error) {
+                            console.error("删除出错:", error);
+                            alert("删除失败，请检查 Token 权限或网络配置。");
+                        }
+                    });
+
                     item.appendChild(img);
+                    item.appendChild(deleteBtn);
+
                     item.addEventListener('click', () => {
-                        lightboxImg.src = imgSrc;
+                        lightboxImg.src = imgObj.url;
                         lightboxModal.classList.add('active');
                     });
 
@@ -883,7 +952,7 @@
                 }
             });
 
-            // 升级后的 GitHub API 自动上传逻辑
+            // GitHub API 自动上传逻辑（记录 Sha 以便后续删除）
             if (imageUploadInput) {
                 imageUploadInput.addEventListener('change', async (e) => {
                     const files = e.target.files;
@@ -920,16 +989,19 @@
                                 throw new Error(`GitHub API 上传失败: ${response.statusText}`);
                             }
 
+                            const responseData = await response.json();
+                            const fileSha = responseData.content.sha;
                             const remoteFileUrl = `https://raw.githubusercontent.com/${GITHUB_CONFIG.owner}/${GITHUB_CONFIG.repo}/main/${filePath}`;
 
-                            uploadedImages.push(remoteFileUrl);
-                            allGalleryImages.push(remoteFileUrl);
+                            uploadedImages.push({
+                                url: remoteFileUrl,
+                                path: filePath,
+                                sha: fileSha
+                            });
                             localStorage.setItem('ivy_uploaded_gallery', JSON.stringify(uploadedImages));
                             
                             renderWaterfall();
                             setRandomMainThumbnail();
-                            
-                            console.log(`图片成功上传并同步至 GitHub: ${remoteFileUrl}`);
                         } catch (error) {
                             console.error("上传出错:", error);
                             alert("图片上传到 GitHub 失败，请检查 Token 权限或网络配置。");
