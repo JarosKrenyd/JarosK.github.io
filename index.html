@@ -8,6 +8,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300;14..32,400;14..32,500;14..32,600;14..32,700;14..32,900&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jsmediatags/3.9.5/jsmediatags.min.js" defer></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         
@@ -1032,7 +1033,7 @@
         <div class="subpage-header">
             <div class="subpage-title"><i class="fas fa-compact-disc"></i> My Music Collection ＆ Audio Universe</div>
             <div class="subpage-actions">
-                <button class="clear-cache-btn" id="clearMusicCacheBtn" title="清空本地列表"><i class="fas fa-sync-alt"></i> 清空列表缓存</button>
+                <button class="clear-cache-btn" id="clearMusicCacheBtn" title="仅清除失效歌曲"><i class="fas fa-sync-alt"></i> 清理失效缓存</button>
                 <label class="upload-btn-label">
                     <i class="fas fa-cloud-upload-alt"></i> 上传音乐
                     <input type="file" id="musicUploadInput" accept="audio/*" multiple style="display: none;" />
@@ -1428,14 +1429,53 @@
             const lightboxImg = document.getElementById('lightboxImg');
             const lightboxClose = document.getElementById('lightboxClose');
 
+            // 检测一张图片链接是否仍然可以正常加载
+            function testImageValid(url) {
+                return new Promise((resolve) => {
+                    if (!url) { resolve(false); return; }
+                    const img = new Image();
+                    let done = false;
+                    const timer = setTimeout(() => {
+                        if (!done) { done = true; resolve(false); }
+                    }, 10000);
+                    img.onload = () => { if (!done) { done = true; clearTimeout(timer); resolve(true); } };
+                    img.onerror = () => { if (!done) { done = true; clearTimeout(timer); resolve(false); } };
+                    img.src = url;
+                });
+            }
+
             if (clearGalleryCacheBtn) {
-                clearGalleryCacheBtn.addEventListener('click', () => {
-                    if (confirm('确认清空本地的图片缓存吗？（不会影响 GitHub 仓库中的原文件）')) {
-                        localStorage.removeItem('ivy_uploaded_gallery');
-                        uploadedImages = [];
-                        renderWaterfall();
-                        setRandomMainThumbnail();
-                        alert('本地相册缓存已清空！');
+                clearGalleryCacheBtn.addEventListener('click', async () => {
+                    if (!uploadedImages || uploadedImages.length === 0) {
+                        alert('当前没有图片缓存记录。');
+                        return;
+                    }
+                    if (!confirm(`将检测当前 ${uploadedImages.length} 张图片是否仍可正常访问，仅清除已失效的记录（正常图片不会被删除，也不会影响 GitHub 仓库中的原文件），是否继续？`)) return;
+
+                    const originalHtml = clearGalleryCacheBtn.innerHTML;
+                    clearGalleryCacheBtn.disabled = true;
+                    clearGalleryCacheBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 检测中...';
+
+                    const checks = await Promise.all(uploadedImages.map((imgObj) => {
+                        const url = typeof imgObj === 'string' ? imgObj : (imgObj ? imgObj.url : '');
+                        return testImageValid(url);
+                    }));
+
+                    const validImages = uploadedImages.filter((_, idx) => checks[idx]);
+                    const removedCount = uploadedImages.length - validImages.length;
+
+                    uploadedImages = validImages;
+                    localStorage.setItem('ivy_uploaded_gallery', JSON.stringify(uploadedImages));
+                    renderWaterfall();
+                    setRandomMainThumbnail();
+
+                    clearGalleryCacheBtn.disabled = false;
+                    clearGalleryCacheBtn.innerHTML = originalHtml;
+
+                    if (removedCount > 0) {
+                        alert(`已清除 ${removedCount} 条失效图片记录，${validImages.length} 张正常图片已保留。`);
+                    } else {
+                        alert('检测完成，未发现失效图片，所有图片均已保留。');
                     }
                 });
             }
@@ -1577,6 +1617,7 @@
 
             // 播放器 UI 控件
             const vinylWrap = document.getElementById('vinylWrap');
+            const playerCoverImg = document.getElementById('playerCoverImg');
             const playerTitle = document.getElementById('playerTitle');
             const playerArtist = document.getElementById('playerArtist');
             const playerSeekBar = document.getElementById('playerSeekBar');
@@ -1589,6 +1630,41 @@
             const musicListWrap = document.getElementById('musicListWrap');
             const musicUploadInput = document.getElementById('musicUploadInput');
             const clearMusicCacheBtn = document.getElementById('clearMusicCacheBtn');
+
+            const defaultCoverUrl = 'https://i.postimg.cc/fTX2LdCw/wallhaven-3k5zgy-3840x2400.png';
+
+            // 从音频文件中读取内嵌封面（ID3 APIC / MP4 covr 等），失败或不存在则返回 null
+            function extractEmbeddedCover(file) {
+                return new Promise((resolve) => {
+                    if (typeof jsmediatags === 'undefined') { resolve(null); return; }
+                    try {
+                        jsmediatags.read(file, {
+                            onSuccess: (tag) => {
+                                try {
+                                    const picture = tag && tag.tags && tag.tags.picture;
+                                    if (!picture || !picture.data || !picture.format) { resolve(null); return; }
+                                    const byteArray = new Uint8Array(picture.data);
+                                    // 封面过大（>2MB）不写入 localStorage，避免撑爆本地存储配额
+                                    if (byteArray.length > 2 * 1024 * 1024) { resolve(null); return; }
+                                    let binary = '';
+                                    const chunkSize = 0x8000;
+                                    for (let i = 0; i < byteArray.length; i += chunkSize) {
+                                        binary += String.fromCharCode.apply(null, byteArray.subarray(i, i + chunkSize));
+                                    }
+                                    const dataUrl = `data:${picture.format};base64,${btoa(binary)}`;
+                                    resolve(dataUrl);
+                                } catch (e) {
+                                    console.warn('封面解析失败:', e);
+                                    resolve(null);
+                                }
+                            },
+                            onError: () => resolve(null)
+                        });
+                    } catch (e) {
+                        resolve(null);
+                    }
+                });
+            }
 
             function formatTime(seconds) {
                 if (isNaN(seconds) || seconds === Infinity) return "00:00";
@@ -1623,6 +1699,10 @@
                 playerTitle.textContent = track.name || "未命名曲目";
                 miniMusicTitle.textContent = track.name || "未命名曲目";
                 miniMusicMeta.textContent = "正在播放 · Jaros Space";
+
+                if (playerCoverImg) {
+                    playerCoverImg.src = track.cover || defaultCoverUrl;
+                }
 
                 renderMusicList();
 
@@ -1696,10 +1776,14 @@
                     const item = document.createElement('div');
                     item.className = `music-list-item ${idx === currentTrackIndex ? 'active' : ''}`;
                     
+                    const iconInnerHtml = track.cover
+                        ? `<img src="${track.cover}" alt="cover" style="width:100%; height:100%; object-fit:cover; border-radius:12px;" onerror="this.style.display='none';" />`
+                        : `<i class="fas ${idx === currentTrackIndex && !audioPlayer.paused ? 'fa-volume-up' : 'fa-music'}"></i>`;
+
                     item.innerHTML = `
                         <div class="music-item-info">
-                            <div class="music-item-icon">
-                                <i class="fas ${idx === currentTrackIndex && !audioPlayer.paused ? 'fa-volume-up' : 'fa-music'}"></i>
+                            <div class="music-item-icon" style="overflow:hidden;">
+                                ${iconInnerHtml}
                             </div>
                             <div>
                                 <div class="music-item-name">${track.name || '未命名音频'}</div>
@@ -1749,6 +1833,7 @@
                                 audioPlayer.src = '';
                                 currentTrackIndex = -1;
                                 playerTitle.textContent = '未选择歌曲';
+                                if (playerCoverImg) playerCoverImg.src = defaultCoverUrl;
                                 syncPlayStatusState(false);
                             } else if (currentTrackIndex > idx) {
                                 currentTrackIndex--;
@@ -1808,18 +1893,72 @@
                 }
             });
 
+            // 检测一个音频链接是否仍然可以正常加载
+            function testAudioValid(url) {
+                return new Promise((resolve) => {
+                    if (!url) { resolve(false); return; }
+                    const testPlayer = new Audio();
+                    let done = false;
+                    const timer = setTimeout(() => {
+                        if (!done) { done = true; cleanup(); resolve(false); }
+                    }, 10000);
+                    function cleanup() {
+                        testPlayer.removeEventListener('loadedmetadata', onOk);
+                        testPlayer.removeEventListener('error', onErr);
+                        testPlayer.src = '';
+                    }
+                    function onOk() { if (!done) { done = true; clearTimeout(timer); cleanup(); resolve(true); } }
+                    function onErr() { if (!done) { done = true; clearTimeout(timer); cleanup(); resolve(false); } }
+                    testPlayer.addEventListener('loadedmetadata', onOk);
+                    testPlayer.addEventListener('error', onErr);
+                    testPlayer.preload = 'metadata';
+                    testPlayer.src = url;
+                });
+            }
+
             if (clearMusicCacheBtn) {
-                clearMusicCacheBtn.addEventListener('click', () => {
-                    if (confirm('确认清空本地的歌曲列表缓存吗？（不会影响 GitHub 仓库中的音频文件）')) {
-                        localStorage.removeItem('ivy_uploaded_music');
-                        uploadedMusic = [];
+                clearMusicCacheBtn.addEventListener('click', async () => {
+                    if (!uploadedMusic || uploadedMusic.length === 0) {
+                        alert('当前没有歌曲缓存记录。');
+                        return;
+                    }
+                    if (!confirm(`将检测当前 ${uploadedMusic.length} 首歌曲是否仍可正常访问，仅清除已失效的记录（正常歌曲不会被删除，也不会影响 GitHub 仓库中的音频文件），是否继续？`)) return;
+
+                    const originalHtml = clearMusicCacheBtn.innerHTML;
+                    clearMusicCacheBtn.disabled = true;
+                    clearMusicCacheBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 检测中...';
+
+                    const currentTrack = currentTrackIndex >= 0 ? uploadedMusic[currentTrackIndex] : null;
+
+                    const checks = await Promise.all(uploadedMusic.map((track) => testAudioValid(track && track.url)));
+                    const validMusic = uploadedMusic.filter((_, idx) => checks[idx]);
+                    const removedCount = uploadedMusic.length - validMusic.length;
+
+                    uploadedMusic = validMusic;
+                    localStorage.setItem('ivy_uploaded_music', JSON.stringify(uploadedMusic));
+
+                    // 如果当前正在播放的曲目被判定失效，则重置播放器；否则保持继续播放不受影响
+                    const newIndexOfCurrent = currentTrack ? uploadedMusic.indexOf(currentTrack) : -1;
+                    if (currentTrack && newIndexOfCurrent === -1) {
                         audioPlayer.pause();
                         audioPlayer.src = '';
                         currentTrackIndex = -1;
                         playerTitle.textContent = '未选择歌曲';
+                        if (playerCoverImg) playerCoverImg.src = defaultCoverUrl;
                         syncPlayStatusState(false);
-                        renderMusicList();
-                        alert('本地歌曲缓存已清空！');
+                    } else if (currentTrack) {
+                        currentTrackIndex = newIndexOfCurrent;
+                    }
+
+                    renderMusicList();
+
+                    clearMusicCacheBtn.disabled = false;
+                    clearMusicCacheBtn.innerHTML = originalHtml;
+
+                    if (removedCount > 0) {
+                        alert(`已清除 ${removedCount} 首失效歌曲记录，${validMusic.length} 首正常歌曲已保留。`);
+                    } else {
+                        alert('检测完成，未发现失效歌曲，所有歌曲均已保留。');
                     }
                 });
             }
@@ -1862,11 +2001,15 @@
                             const responseData = await response.json();
                             const musicUrl = creds.getPublicUrl(filePath);
 
+                            // 尝试从音频文件本身读取内嵌封面图（如果有的话）
+                            const embeddedCover = await extractEmbeddedCover(file);
+
                             uploadedMusic.push({
                                 name: file.name.replace(/\.[^/.]+$/, ""), // 自动去除拓展名作为歌名
                                 url: musicUrl,
                                 path: filePath,
-                                sha: responseData.content.sha
+                                sha: responseData.content.sha,
+                                cover: embeddedCover || null
                             });
 
                             localStorage.setItem('ivy_uploaded_music', JSON.stringify(uploadedMusic));
@@ -1999,33 +2142,7 @@
                 isMoving = true; offset = -hbW;
             }
             setInterval(triggerHeartbeat, 5000);
-            setTimeout(triggerHeartbeat, 600);
-
-            function updateHeartbeat() {
-                if (isMoving) {
-                    offset += MOVE_SPEED;
-                    if (offset > hbW + WAVE_POINTS) isMoving = false;
-                }
-                hbCtx.clearRect(0, 0, hbW, hbH);
-                hbCtx.shadowColor = `rgba(255, 255, 255, 0.6)`;
-                hbCtx.shadowBlur = 10;
-                hbCtx.beginPath();
-                for (let x = 0; x < hbW; x++) {
-                    const idx = x - offset;
-                    const y = (idx >= 0 && idx < waveData.length) ? baselineY - waveData[Math.floor(idx)] * AMP_SCALE * hbH * 0.5 : baselineY;
-                    if (x === 0) hbCtx.moveTo(x, y); else hbCtx.lineTo(x, y);
-                }
-                hbCtx.strokeStyle = `rgba(255, 255, 255, 0.95)`;
-                hbCtx.lineWidth = 2.4; hbCtx.lineJoin = 'round'; hbCtx.lineCap = 'round';
-                hbCtx.stroke(); hbCtx.shadowBlur = 0;
-                requestAnimationFrame(updateHeartbeat);
-            }
-            requestAnimationFrame(updateHeartbeat);
-
-            window.addEventListener('resize', function() {
-                resizeHeartbeat();
-                baselineY = hbH * 0.65;
-            });
+            setTimeout(triggerHeartbeat, 1000);
         })();
     </script>
 </body>
