@@ -202,14 +202,48 @@
             align-items: center; justify-content: center; text-align: center;
             padding: 2.5rem 1.5rem;
         }
-        .hub-avatar-wrap { position: relative; margin-bottom: 0.8rem; }
+
+        /* 头像组件样式放大与改进 */
+        .hub-avatar-wrap { 
+            position: relative; 
+            margin-bottom: 0.8rem; 
+            width: 100px;
+            height: 100px;
+            border-radius: 50%;
+            cursor: pointer;
+            display: inline-block;
+        }
         .hub-avatar {
-            width: 76px; height: 76px;
+            width: 100px; 
+            height: 100px;
             border-radius: 50%;
             border: 2px solid rgba(255, 255, 255, 0.9);
             box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
             object-fit: cover;
+            transition: transform 0.3s ease;
         }
+        .hub-avatar-placeholder {
+            width: 100px;
+            height: 100px;
+            border-radius: 50%;
+            border: 2px dashed rgba(255, 255, 255, 0.5);
+            background: rgba(255, 255, 255, 0.08);
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: rgba(255, 255, 255, 0.7);
+            font-size: 1.5rem;
+            transition: all 0.3s ease;
+        }
+        .hub-avatar-wrap:hover .hub-avatar,
+        .hub-avatar-wrap:hover .hub-avatar-placeholder {
+            transform: scale(1.06);
+            border-color: rgba(255, 255, 255, 0.9);
+            background: rgba(255, 255, 255, 0.18);
+            color: #ffffff;
+        }
+
         .hub-greet { font-size: 1.1rem; font-weight: 500; color: rgba(255, 255, 255, 0.8); margin-bottom: 0.1rem; }
         .hub-slogan {
             font-size: 1.5rem; font-weight: 700; letter-spacing: -0.5px;
@@ -227,7 +261,6 @@
         .article-meta { font-size: 0.7rem; color: rgba(255, 255, 255, 0.6); display: flex; gap: 0.8rem; }
         .article-item:hover .article-title { color: #d4d4d4; }
 
-        /* 相册展位卡片：已纯化，不含任何文字遮罩 */
         .block-top-img { 
             padding: 0; 
             height: 180px; 
@@ -653,10 +686,14 @@
                             </div>
                         </div>
 
-                        <!-- 头像看板 -->
+                        <!-- 头像看板：大小增加，默认空状态，支持点击上传至 GitHub -->
                         <div class="bento-card block-center">
-                            <div class="hub-avatar-wrap">
-                                <img src="https://images.unsplash.com/photo-1514888286974-6c03e2ca1dba?q=80&w=200&auto=format&fit=crop" class="hub-avatar" alt="Ivy Profile Avatar">
+                            <div class="hub-avatar-wrap" id="hubAvatarWrap" title="点击上传头像">
+                                <img src="" class="hub-avatar" id="hubAvatarImg" alt="Profile Avatar" style="display: none;">
+                                <div class="hub-avatar-placeholder" id="hubAvatarPlaceholder">
+                                    <i class="fas fa-camera"></i>
+                                </div>
+                                <input type="file" id="avatarUploadInput" accept="image/*" style="display: none;" />
                             </div>
                             <div class="hub-greet">你好~/HELLO~/BONJOUR~/Привет~/Guten Tag~</div>
                             <div class="hub-slogan">It‘s Jaros，or ... NOT?</div>
@@ -856,7 +893,6 @@
                 document.getElementById('calDayName').textContent = weekdayStr;
             }
 
-            // 动态生成精准日历网格
             function renderDynamicCalendar() {
                 const now = new Date();
                 const y = now.getFullYear();
@@ -867,15 +903,12 @@
                 if (!container) return;
                 container.innerHTML = '';
 
-                // 当月1号是星期几 (转换成周一为0, 周日为6)
                 const firstDay = new Date(y, m, 1);
                 let startDay = (firstDay.getDay() + 6) % 7;
 
-                // 上个月天数和当月天数
                 const prevMonthDays = new Date(y, m, 0).getDate();
                 const daysInMonth = new Date(y, m + 1, 0).getDate();
 
-                // 填充上月末尾补位
                 for (let i = startDay - 1; i >= 0; i--) {
                     const cell = document.createElement('div');
                     cell.className = 'calendar-cell';
@@ -884,7 +917,6 @@
                     container.appendChild(cell);
                 }
 
-                // 填充当前月
                 for (let day = 1; day <= daysInMonth; day++) {
                     const cell = document.createElement('div');
                     cell.className = 'calendar-cell';
@@ -895,7 +927,6 @@
                     container.appendChild(cell);
                 }
 
-                // 填充下月开头补位（补齐整行）
                 const totalCells = startDay + daysInMonth;
                 const nextPadding = (7 - (totalCells % 7)) % 7;
                 for (let i = 1; i <= nextPadding; i++) {
@@ -915,13 +946,11 @@
             async function fetchRealWeather() {
                 const weatherEl = document.getElementById('weatherDisplay');
                 try {
-                    // IP 定位获取经纬度与城市名
                     const geoRes = await fetch('https://ipapi.co/json/');
                     if (!geoRes.ok) throw new Error('IP positioning failed');
                     const geoData = await geoRes.json();
                     const { latitude, longitude, city } = geoData;
 
-                    // Open-Meteo 免费获取实时天气
                     const weatherRes = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current_weather=true`);
                     if (!weatherRes.ok) throw new Error('Weather API failed');
                     const weatherData = await weatherRes.json();
@@ -929,7 +958,6 @@
                     const temp = Math.round(weatherData.current_weather.temperature);
                     const code = weatherData.current_weather.weathercode;
 
-                    // 天气代码转 FontAwesome 图标
                     let iconClass = 'fa-sun';
                     if (code >= 1 && code <= 3) iconClass = 'fa-cloud-sun';
                     else if (code >= 45 && code <= 48) iconClass = 'fa-smog';
@@ -946,7 +974,85 @@
             }
             fetchRealWeather();
 
-            // ==================== 相册与存储 ====================
+            // ==================== 3. 头像模块逻辑（点击上传至 GitHub） ====================
+            const hubAvatarWrap = document.getElementById('hubAvatarWrap');
+            const hubAvatarImg = document.getElementById('hubAvatarImg');
+            const hubAvatarPlaceholder = document.getElementById('hubAvatarPlaceholder');
+            const avatarUploadInput = document.getElementById('avatarUploadInput');
+
+            function loadSavedAvatar() {
+                const savedAvatarUrl = localStorage.getItem('ivy_user_avatar');
+                if (savedAvatarUrl) {
+                    hubAvatarImg.src = savedAvatarUrl;
+                    hubAvatarImg.style.display = 'block';
+                    hubAvatarPlaceholder.style.display = 'none';
+                } else {
+                    hubAvatarImg.src = '';
+                    hubAvatarImg.style.display = 'none';
+                    hubAvatarPlaceholder.style.display = 'flex';
+                }
+            }
+            loadSavedAvatar();
+
+            if (hubAvatarWrap && avatarUploadInput) {
+                hubAvatarWrap.addEventListener('click', () => {
+                    avatarUploadInput.click();
+                });
+
+                avatarUploadInput.addEventListener('change', async (e) => {
+                    const file = e.target.files[0];
+                    if (!file) return;
+
+                    const token = GITHUB_CONFIG.getToken();
+                    if (!token) {
+                        avatarUploadInput.value = '';
+                        return;
+                    }
+
+                    try {
+                        const base64String = await new Promise((resolve, reject) => {
+                            const reader = new FileReader();
+                            reader.onload = () => resolve(reader.result.split(',')[1]);
+                            reader.onerror = reject;
+                            reader.readAsDataURL(file);
+                        });
+
+                        const fileName = `avatar_${Date.now()}_${file.name.replace(/[^a-zA-Z0-9_.-]/g, '_')}`;
+                        const filePath = `images/${fileName}`;
+                        const apiUrl = `https://api.github.com/repos/${GITHUB_CONFIG.owner}/${GITHUB_CONFIG.repo}/contents/${filePath}`;
+
+                        const response = await fetch(apiUrl, {
+                            method: 'PUT',
+                            headers: {
+                                'Authorization': `Bearer ${token}`,
+                                'Content-Type': 'application/json',
+                                'Accept': 'application/vnd.github+json'
+                            },
+                            body: JSON.stringify({
+                                message: `Upload avatar ${fileName} via web interface`,
+                                content: base64String
+                            })
+                        });
+
+                        if (!response.ok) {
+                            if (response.status === 401) localStorage.removeItem('ivy_github_token');
+                            throw new Error(`GitHub API 上传失败: ${response.statusText}`);
+                        }
+
+                        const remoteFileUrl = `https://raw.githubusercontent.com/${GITHUB_CONFIG.owner}/${GITHUB_CONFIG.repo}/main/${filePath}`;
+
+                        localStorage.setItem('ivy_user_avatar', remoteFileUrl);
+                        loadSavedAvatar();
+                    } catch (error) {
+                        console.error("头像上传出错:", error);
+                        alert("头像上传失败，请检查 Token 权限或网络配置。");
+                    } finally {
+                        avatarUploadInput.value = '';
+                    }
+                });
+            }
+
+            // ==================== 4. 相册与存储逻辑 ====================
             let uploadedImages = JSON.parse(localStorage.getItem('ivy_uploaded_gallery')) || [];
             const mainThumb = document.getElementById('mainGalleryThumbnail');
             
